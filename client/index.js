@@ -1,9 +1,10 @@
-const io = require("socket.io-client");
+const WebSocket = require("websocket").w3cwebsocket;
+const fetch = require("node-fetch");
 
 const generateStatus = () => {
   const obj = {};
-  for(let i = 1;i <= 20;i++) {
-    obj[i] = Math.floor(Math.random() * 1000)
+  for (let i = 1; i <= 20; i++) {
+    obj[i] = Math.floor(Math.random() * 1000);
   }
   return obj;
 };
@@ -13,52 +14,53 @@ const generateError = () => Math.floor(Math.random() * 1000000000);
 async function login(username, password) {
   const response = await fetch("http://localhost:8080/login", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ username, password })
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
   });
+
   if (response.ok) {
     const data = await response.json();
     return data.token;
   } else {
     const error = await response.json();
-    navigator.reload();
+    console.error("Login failed:", error);
+    process.exit(1);
   }
-};
+}
 
-// Connect to the Socket.IO server
-login("car-client", "0000").then((token) => {
-  const socket = io("http://localhost:8080", { auth: { token } });
+login("car-client", "0000").then(async (token) => {
+  const ws = new WebSocket("ws://localhost:8080");
 
-  // WebSocket connection event
-  socket.on("connect", () => {
-    console.log(" ✔ Connected to the Socket server");
-  
-    // Update data and send it to the server
-    socket.emit("updateStatus", generateStatus());
+  const sendIfConnected = (payload) => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({...payload, token}));
+    } else {
+      console.warn("⚠ WebSocket not ready, skipping send");
+    }
+  };
+
+  ws.onopen = () => {
+    console.log("✔ Connected to WebSocket server");
+
+    sendIfConnected({ type: "auth" });
+    // after Auth
+    sendIfConnected({ type: "updateStatus", data: generateStatus() });
+    sendIfConnected({ type: "logError", data: generateError() });
+
     setInterval(() => {
-      socket.emit("updateStatus", generateStatus());
-    }, 20_000);
+      sendIfConnected({ type: "updateStatus", data: generateStatus() });
+    }, 2000);
 
-    socket.emit("logError", generateError());
     setInterval(() => {
-      socket.emit("logError", generateError());
-    }, 60_000);
-  });
+      sendIfConnected({ type: "logError", data: generateError() });
+    }, 6000);
+  };
 
-  // web client connection
-  socket.on("webConnection", (data) => {
-    console.log("web connection state is: " + data.connect);
-  });
-  
-  // WebSocket error event
-  socket.on("error", (error) => {
-    console.error("Socket Error:", error);
-  });
-  
-  // WebSocket connection close event
-  socket.on("disconnect", () => {
-    console.log(" ✖ Socket connection closed");
-  });
+  ws.onerror = (error) => {
+    console.error("WebSocket error:", error);
+  };
+
+  ws.onclose = () => {
+    console.log("✖ WebSocket connection closed");
+  };
 });
