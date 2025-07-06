@@ -33,6 +33,7 @@ login("car-client", "0000").then(async (token) => {
 
   const sendIfConnected = (payload) => {
     if (ws.readyState === WebSocket.OPEN) {
+      console.log(JSON.stringify({...payload, token}))
       ws.send(JSON.stringify({...payload, token}));
     } else {
       console.warn("⚠ WebSocket not ready, skipping send");
@@ -64,3 +65,4 @@ login("car-client", "0000").then(async (token) => {
     console.log("✖ WebSocket connection closed");
   };
 });
+
